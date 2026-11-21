@@ -1794,6 +1794,7 @@ $('guestOpen').onclick=()=>{
 function guestWrite(route,input){
  return api('/api/guest/'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
 }
+function registerGuestOrder(draft){return guestWrite('order',{token:draft.token,tier:draft.tier,tea:draft.tea})}
 function guestButton(label,action){
  const b=node('button',label);b.type='button';b.onclick=action;return b;
 }
@@ -1807,7 +1808,7 @@ function guestRender(view){
  wrap.append(nav);$('page').append(wrap);
  async function submit(button,task){
   button.disabled=true;status.textContent='请稍候…';
-  try{await task();status.textContent=''}catch{status.textContent='暂时未能完成，请再试一次。'}finally{button.disabled=false}
+  try{await task();status.textContent=''}catch{status.textContent='暂时联系不上留言服务。草稿已保留，稍后可再试。'}finally{button.disabled=false}
  }
  if(view==='wall'){guestWall(wrap,status);return}
  if(guestDraft.posted){location.replace('#/guest/wall');return}
@@ -1823,6 +1824,7 @@ function guestRender(view){
   const post=guestButton('夹上水牌墙',()=>{
    if(!msg.value.trim()){status.textContent='写句话再夹上墙吧。';msg.focus();return}
    submit(post,async()=>{
+    await registerGuestOrder(guestDraft);
     const result=await guestWrite('post',{token:guestDraft.token,message:msg.value,signature:name.value});
     guestDraft.posted=result.id;saveGuest();if(wrap.isConnected)location.hash='/guest/wall';
    });
@@ -1834,10 +1836,12 @@ function guestRender(view){
  const title=node('h1','点心纸'),meta=node('div','广州觅食手帐　／　'+new Date().toLocaleDateString('zh-CN'));
  sheet.append(meta,title,node('p','茶位　'+guestDraft.tea),node('p','今次翻食记，你想畀个咩点？'));
  const grid=node('div','','guest-grid'),cells=[];
- const pay=guestButton('埋单',()=>submit(pay,async()=>{
-  const tier=Math.floor(guestDraft.cell/5);await guestWrite('order',{token:guestDraft.token,tier,tea:guestDraft.tea});
-  guestDraft.tier=tier;guestDraft.paid=true;saveGuest();if(wrap.isConnected)location.hash='/guest/receipt';
- }));
+ const pay=guestButton('埋单',()=>{
+  if(guestDraft.cell<0)return;
+  guestDraft.tier=Math.floor(guestDraft.cell/5);guestDraft.paid=true;saveGuest();
+  location.hash='/guest/receipt';
+  registerGuestOrder(guestDraft).catch(()=>{});
+ });
  function mark(){cells.forEach((b,i)=>b.setAttribute('aria-pressed',String(i===guestDraft.cell)));pay.disabled=guestDraft.cell<0}
  guestTiers.forEach((tier,row)=>{
   grid.append(node('strong',tier));
