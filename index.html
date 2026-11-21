@@ -788,6 +788,19 @@ header .bar .flat { color: #6a5d4d; font-size: 13px; }
  #page .current-stage>.inside-cover .contents-line{min-height:44px}
 }
 
+.album-paper-frame{position:relative;overflow:hidden;isolation:isolate;border-radius:3px 4px 3px 3px}
+.album-paper-frame>.album-binding{left:50%;z-index:7}
+#bookShelf .shelf-volume{touch-action:pan-y pinch-zoom}
+@media(min-width:701px){
+ #page .album-contents{box-sizing:border-box;scrollbar-width:none;padding-inline-end:8px}
+ #page .album-contents::-webkit-scrollbar{display:none}
+ #page .album-contents.more-below{mask-image:linear-gradient(to bottom,black calc(100% - 12px),transparent)}
+ #page .contents-line{display:grid;position:relative;grid-template-columns:minmax(0,1fr) 3ch;column-gap:10px;padding-inline:9px 5px}
+ #page .contents-line small{width:100%;margin:0;text-align:right;font-variant-numeric:tabular-nums}
+ #page .contents-line[aria-current="page"]::before{position:absolute;left:0;top:50%}
+}
+@media(max-width:700px){.album-paper-frame>.album-binding{display:none}}
+
 /* A writing table and the bound district journals placed on it. */
 #page.page.album-area {
   --album-desk: url("./desk-67e6551bfece.webp");
@@ -1989,8 +2002,9 @@ function showDistrict(district,selectedId){
  const {inside,contents}=albumIndex(district);
  const mobileIndex=node('div','','mobile-index');
  mobileIndex.append(ornament('span','mobile-index-stamp blockprint'),node('h1',district.name+'食记'));
- spread.append(left,right,binding);
- book.append(mobileIndex,spread);page.append(toolbar,book);
+ const frame=node('div','','album-paper-frame');
+ frame.append(spread,binding);spread.append(left,right);
+ book.append(mobileIndex,frame);page.append(toolbar,book);
  const choose=node('select','','album-select');choose.setAttribute('aria-label','选择餐厅页');
  choose.append(new Option('目录','0'));
  const tabs=entries.map((row,index)=>{
@@ -2009,6 +2023,12 @@ function showDistrict(district,selectedId){
  const previous=action('← 上一页',()=>navigate(albumStep(current,entries.length,mobile,-1)),'turn-button');
  const next=action('下一页 →',()=>navigate(albumStep(current,entries.length,mobile,1)),'turn-button');
  const controls=node('div','','album-turns');controls.append(previous,counter,next);book.append(controls);
+ function refreshContents(){
+  contents.classList.toggle('more-below',!mobile&&contents.scrollHeight-contents.clientHeight-contents.scrollTop>1);
+ }
+ contents.addEventListener('scroll',refreshContents,{passive:true});
+ const contentsSize=new ResizeObserver(refreshContents);
+ contentsSize.observe(contents);tabs.forEach(tab=>contentsSize.observe(tab));
  function makePage(number){
   if(number===0)return inside;
   if(number!==null&&entries[number-1])return restaurantLeaf(district,entries[number-1],number-1);
@@ -2048,6 +2068,7 @@ function showDistrict(district,selectedId){
   left.replaceChildren(land?turn.newLeft:turn.oldLeft);
   right.replaceChildren(land?turn.newRight:turn.oldRight);
   turn.sheet.remove();spread.style.minHeight='';
+  if(land&&book.isConnected)commit(turn.target,turn.pageNumber);
  }
  function startSheet(target,pageNumber){
   const forward=target>current,oldLeft=left.firstElementChild,oldRight=right.firstElementChild;
@@ -2058,10 +2079,10 @@ function showDistrict(district,selectedId){
   spread.style.minHeight=spread.getBoundingClientRect().height+'px';
   let frames;
   if(mobile){
-   front.append(oldRight);right.replaceChildren(newRight);sheet.append(front);
-   frames=forward?
-    [{transform:'translateX(0) rotateY(0deg)',opacity:1},{transform:'translateX(-15%) rotateY(-75deg)',opacity:0}]:
-    [{transform:'translateX(15%) rotateY(75deg)',opacity:0},{transform:'translateX(0) rotateY(0deg)',opacity:1}];
+   front.append(forward?oldRight:newRight);
+   if(forward)right.replaceChildren(newRight);
+   sheet.append(front);
+   frames=[{transform:'translateX(0) rotateY(0deg)',opacity:1},{transform:'translateX(-15%) rotateY(-75deg)',opacity:0}];
   }else{
    if(forward){front.append(oldRight);back.append(newLeft);right.replaceChildren(newRight);}
    else{back.append(oldLeft);front.append(newRight);left.replaceChildren(newLeft);}
@@ -2076,7 +2097,6 @@ function showDistrict(district,selectedId){
  }
  function animateTo(turn,land){
   turn.land=land;
-  if(land)commit(turn.target,turn.pageNumber);
   const end=(land===turn.forward)?duration:0;
   const time=turn.animation.currentTime||0;
   if(Math.abs(time-end)<1){settle(turn,land);return;}
@@ -2086,13 +2106,13 @@ function showDistrict(district,selectedId){
  }
  function navigate(pageNumber){
   const target=albumView(pageNumber,entries.length,mobile).start;
-  if(active)settle(active,active.land);
+  if(active)return;
   if(target===current){commit(target,pageNumber);return;}
   if(allowsMotion()){animateTo(startSheet(target,pageNumber),true);return;}
   if(spread.contains(document.activeElement))book.focus({preventScroll:true});
   place(target);commit(target,pageNumber);
  }
- choose.onchange=()=>navigate(Number(choose.value));
+ choose.onchange=()=>{const requested=Number(choose.value);choose.value=String(selectedPage);navigate(requested);};
  place(current);update();
  book.onkeydown=event=>{
   if(event.target===choose||event.target.closest('input,textarea,select,button,a')||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
@@ -2101,7 +2121,7 @@ function showDistrict(district,selectedId){
   }
  };
  spread.onpointerdown=event=>{
-  if(!event.isPrimary||event.button!==0||event.target.closest('select,input,button,textarea'))return;
+  if(active||!event.isPrimary||event.button!==0||event.target.closest('select,input,button,textarea'))return;
   drag={id:event.pointerId,x:event.clientX,y:event.clientY,target:null,progress:0};skipClick=false;
  };
  spread.onpointermove=event=>{
@@ -2114,7 +2134,7 @@ function showDistrict(district,selectedId){
    skipClick=true;
    if(target===current){drag=null;return;}
    spread.setPointerCapture(event.pointerId);
-   if(active)settle(active,active.land);
+   if(active){drag=null;return;}
    drag.target=target;drag.width=Math.max(1,right.getBoundingClientRect().width);
    if(allowsMotion())drag.sheet=startSheet(target,target);
   }
@@ -2126,7 +2146,7 @@ function showDistrict(district,selectedId){
   if(!drag||event.pointerId!==drag.id)return;
   const gesture=drag;drag=null;
   if(gesture.target===null)return;
-  const land=!cancelled&&gesture.progress>=Math.min(.28,58/gesture.width);
+  const land=!cancelled&&gesture.progress>.5;
   if(gesture.sheet){if(active===gesture.sheet)animateTo(gesture.sheet,land);}
   else if(land)navigate(gesture.target);
  }
@@ -2147,7 +2167,7 @@ function showDistrict(district,selectedId){
  window.addEventListener('hashchange',function clean(){
   if(book.isConnected)return;
   if(active)settle(active,active.land);
-  media.removeEventListener('change',onResize);window.removeEventListener('hashchange',clean);
+  contentsSize.disconnect();media.removeEventListener('change',onResize);window.removeEventListener('hashchange',clean);
  });
 }
 function turnFrames(){
@@ -2654,8 +2674,7 @@ const journalMotion=(()=>{
 </script><script>(() => {
  const shelf=document.querySelector('#bookShelf');
  const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
- const touch=()=>matchMedia('(hover:none), (pointer:coarse)').matches;
- let busy=false,armed=null,lastBook=null,flight=null;
+ let busy=false,lastBook=null,flight=null;
  let expectedHash='',pendingReturn=false;
  const animations=new Set();
  function animate(element,frames,duration=400){
@@ -2701,7 +2720,7 @@ const journalMotion=(()=>{
  }
  async function open(book){
   if(busy)return;
-  busy=true;armed=null;book.classList.remove('is-armed');
+  busy=true;
   const hash=book.getAttribute('href'),rect=book.getBoundingClientRect();
   lastBook={id:book.dataset.district,hash,shelfScroll:scrollY,angle:Math.random()*10-5};
   paper();
@@ -2758,12 +2777,8 @@ const journalMotion=(()=>{
   if(!link||event.defaultPrevented||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;
   if(link.matches('#bookShelf .shelf-volume')){
    event.preventDefault();if(busy)return;
-   if(touch()&&event.detail!==0&&armed!==link){
-    armed?.classList.remove('is-armed');armed=link;link.classList.add('is-armed');return;
-   }
    open(link);return;
   }
-  if(armed){armed.classList.remove('is-armed');armed=null;}
   if(link.getAttribute('href')==='#/shelf'&&lastBook&&location.hash.startsWith('#/district/')){
    pendingReturn=true;
   }
